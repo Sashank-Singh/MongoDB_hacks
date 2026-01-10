@@ -27,7 +27,7 @@ class Worker:
         self.agent_id: Optional[str] = None
         self.running = False
         self.heartbeat_interval = 15  # seconds
-        self.poll_interval = 2  # seconds
+        self.poll_interval = 0.5  # seconds
     
     async def register(self) -> str:
         """Register this worker as an agent in the database"""

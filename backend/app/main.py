@@ -9,6 +9,7 @@ import asyncio
 from app.database import database
 from app.api import jobs, tasks, agents
 from app.api import system
+from app.api.system import start_workers
 from app.core.scheduler import scheduler
 from app.agents.sentinel import sentinel
 
@@ -23,6 +24,9 @@ async def lifespan(app: FastAPI):
     # Auto-start scheduler and sentinel
     asyncio.create_task(scheduler.run_loop())
     asyncio.create_task(sentinel.run_loop())
+    
+    # Start workers for registered agents
+    await start_workers(database)
     
     yield
     

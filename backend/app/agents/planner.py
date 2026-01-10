@@ -98,7 +98,7 @@ class PlannerAgent:
         """Use OpenAI to decompose the goal"""
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
                     {"role": "user", "content": f"Decompose this goal into tasks:\n\n{goal}"}

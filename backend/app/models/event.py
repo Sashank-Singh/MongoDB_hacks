@@ -30,6 +30,7 @@ class EventType(str, Enum):
     AGENT_REGISTERED = "agent_registered"
     AGENT_HEARTBEAT = "agent_heartbeat"
     AGENT_DEAD = "agent_dead"
+    AGENT_THINKING = "agent_thinking"
     
     # System events
     SCHEDULER_RUN = "scheduler_run"

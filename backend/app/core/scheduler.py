@@ -19,7 +19,7 @@ class Scheduler:
     3. Claims tasks atomically to prevent double-execution
     """
     
-    def __init__(self, poll_interval: float = 2.0):
+    def __init__(self, poll_interval: float = 0.5):
         self.poll_interval = poll_interval
         self.running = False
     
@@ -233,12 +233,12 @@ class Scheduler:
                 async for job_doc in cursor:
                     await self.check_job_completion(job_doc["_id"])
                 
-                # Log scheduler heartbeat
-                event = Event(
-                    type=EventType.SCHEDULER_RUN,
-                    payload={"tasks_scheduled": len(scheduled)}
-                )
-                await database.events.insert_one(event.to_mongo())
+                # Log scheduler heartbeat - DISABLED to save DB space
+                # event = Event(
+                #     type=EventType.SCHEDULER_RUN,
+                #     payload={"tasks_scheduled": len(scheduled)}
+                # )
+                # await database.events.insert_one(event.to_mongo())
                 
             except Exception as e:
                 print(f"❌ Scheduler error: {e}")

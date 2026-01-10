@@ -18,6 +18,8 @@ interface Task {
     status: 'pending' | 'running' | 'completed' | 'failed';
     assigned_agent?: string;
     depends_on: string[];
+    outputs?: Record<string, any>;
+    checkpoint?: string;
 }
 
 interface Job {
@@ -106,6 +108,15 @@ export default function Home() {
     const [currentJob, setCurrentJob] = useState<Job | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [events, setEvents] = useState<Event[]>([]);
+    const [stream, setStream] = useState<Array<{
+        id: string;
+        agent: string;
+        role: string;
+        message: string;
+        timestamp: Date;
+        type: string;
+    }>>([]);
+    const [jobDoneProcessed, setJobDoneProcessed] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -131,14 +142,11 @@ export default function Home() {
             },
         ]);
 
-        // Load mock agents
-        setAgents([
-            { id: '1', name: 'Planner', role: 'planner', status: 'idle' },
-            { id: '2', name: 'Research Agent', role: 'researcher', status: 'idle' },
-            { id: '3', name: 'Writer Agent', role: 'writer', status: 'idle' },
-            { id: '4', name: 'Code Agent', role: 'coder', status: 'idle' },
-            { id: '5', name: 'Sentinel', role: 'sentinel', status: 'idle' },
-        ]);
+        // Initial agent fetch
+        fetch('/api/agents')
+            .then(res => res.json())
+            .then(data => setAgents(data))
+            .catch(err => console.error('Failed to load agents:', err));
     }, []);
 
     // Polling for updates when job is running
@@ -149,22 +157,105 @@ export default function Home() {
             try {
                 // Fetch job status
                 const jobRes = await fetch(`/api/jobs/${currentJob.id}`);
+                let data: any = null;
                 if (jobRes.ok) {
-                    const data = await jobRes.json();
+                    data = await jobRes.json();
                     setCurrentJob(data.job);
                     setTasks(data.tasks || []);
                 }
 
                 // Fetch events
-                const eventsRes = await fetch(`/api/jobs/${currentJob.id}/events?limit=10`);
+                const eventsRes = await fetch(`/api/jobs/${currentJob.id}/events?limit=20`);
                 if (eventsRes.ok) {
                     const eventsData = await eventsRes.json();
                     setEvents(eventsData);
+
+                    // Add agent events to stream
+                    eventsData.forEach((event: any) => {
+                        // Only add if it has an agent_id and isn't already in stream (by ID)
+                        if (event.agent_id) {
+                            setStream(prev => {
+                                if (prev.find(s => s.id === event.id)) return prev;
+
+                                const agent = agents.find(a => a.id === event.agent_id);
+                                if (!agent) return prev;
+
+                                return [...prev, {
+                                    id: event.id,
+                                    agent: agent.name,
+                                    role: agent.role,
+                                    message: event.message,
+                                    timestamp: new Date(event.timestamp),
+                                    type: event.type.includes('failed') ? 'warning' : 'info'
+                                }].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+                            });
+                        }
+                    });
+                }
+
+                // Fetch agents real-time status
+                const agentsRes = await fetch('/api/agents');
+                if (agentsRes.ok) {
+                    const agentsData = await agentsRes.json();
+                    setAgents(agentsData);
+                }
+
+                if (data) {
+                    // Check for job completion
+                    if (data.job.status === 'done' && !jobDoneProcessed) {
+                        setJobDoneProcessed(true);
+
+                        // Allow time for last polling update to catch all tasks
+                        setTimeout(() => {
+                            const completedTasks = data.tasks || [];
+                            const finalOutput = completedTasks
+                                .filter((t: Task) => t.outputs && (t.outputs.content || t.outputs.code || t.outputs.data))
+                                .map((t: Task) => {
+                                    const out = t.outputs;
+                                    if (!out) return '';
+                                    if (out.content) return `### ${t.name}\n${out.content}`;
+                                    if (out.code) return `### ${t.name}\n\`\`\`${out.language || ''}\n${out.code}\n\`\`\``;
+                                    if (out.data) return `### ${t.name}\n${JSON.stringify(out.data, null, 2)}`;
+                                    return '';
+                                })
+                                .join('\n\n');
+
+                            const completionMessage: Message = {
+                                id: Date.now().toString(),
+                                type: 'agent',
+                                sender: 'Agent OS',
+                                agentRole: 'sentinel',
+                                content: `## 🏁 Job Complete!\n\nHere are the results:\n\n${finalOutput || 'Tasks completed successfully.'}`,
+                                timestamp: new Date(),
+                            };
+                            setMessages(prev => [...prev, completionMessage]);
+                            setCurrentJob(prev => prev ? { ...prev, status: 'done' } : null);
+                        }, 1000);
+                    }
+
+                    // Update stream from checkpoints
+                    if (data.tasks) {
+                        data.tasks.forEach((task: Task) => {
+                            if (task.checkpoint && !stream.find(s => s.message === task.checkpoint)) {
+                                const agent = agents.find(a => a.id === task.assigned_agent);
+                                if (agent) {
+                                    setStream(prev => [...prev, {
+                                        id: Date.now() + Math.random().toString(),
+                                        agent: agent.name,
+                                        role: agent.role,
+                                        message: task.checkpoint!,
+                                        timestamp: new Date(),
+                                        type: 'success'
+                                    }]);
+                                }
+                            }
+                        });
+                    }
                 }
             } catch (error) {
                 console.log('Polling error:', error);
             }
-        }, 2000);
+        }, 1000);
 
         return () => clearInterval(interval);
     }, [currentJob]);
@@ -183,6 +274,8 @@ export default function Home() {
         setMessages((prev) => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
+        setJobDoneProcessed(false);
+        setStream([]);
 
         try {
             // Create job via API

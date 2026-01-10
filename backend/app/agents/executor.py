@@ -8,7 +8,7 @@ from datetime import datetime
 from openai import AsyncOpenAI
 
 from app.agents.base import BaseAgent, TaskResult
-from app.models import Task, AgentRole
+from app.models import Task, AgentRole, EventType
 from app.config import settings
 
 
@@ -31,15 +31,18 @@ class ResearcherAgent(BaseAgent):
         
         try:
             # Get context from previous task outputs if available
+            # Get context from previous task outputs if available
             context = task.inputs.get("context", "")
             
+            await self.log_event(EventType.AGENT_THINKING, task, "Scanning knowledge base and external sources...")
+
             response = await self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert researcher. Provide detailed, factual research findings. Be thorough but concise. Use bullet points for key findings."},
                     {"role": "user", "content": f"Research task: {task.description}\n\nPrevious context: {context}\n\nProvide comprehensive research findings."}
                 ],
-                max_completion_tokens=1000
+                max_tokens=1000
             )
             
             content = response.choices[0].message.content
@@ -79,13 +82,15 @@ class WriterAgent(BaseAgent):
         try:
             context = task.inputs.get("context", "")
             
+            await self.log_event(EventType.AGENT_THINKING, task, "Drafting content structure and writing...")
+
             response = await self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert content writer. Create well-structured, professional content. Use clear headings, bullet points, and organize information logically."},
                     {"role": "user", "content": f"Writing task: {task.description}\n\nSource material/context: {context}\n\nCreate professional, well-formatted content."}
                 ],
-                max_completion_tokens=1500
+                max_tokens=1500
             )
             
             content = response.choices[0].message.content
@@ -125,13 +130,15 @@ class CoderAgent(BaseAgent):
         try:
             context = task.inputs.get("context", "")
             
+            await self.log_event(EventType.AGENT_THINKING, task, "Analyzing requirements and generating code...")
+
             response = await self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are an expert programmer. Write clean, well-documented code. Include comments explaining the logic."},
                     {"role": "user", "content": f"Coding task: {task.description}\n\nContext: {context}\n\nWrite the implementation."}
                 ],
-                max_completion_tokens=1500
+                max_tokens=1500
             )
             
             content = response.choices[0].message.content
@@ -171,13 +178,15 @@ class DataBuilderAgent(BaseAgent):
         try:
             context = task.inputs.get("context", "")
             
+            await self.log_event(EventType.AGENT_THINKING, task, "Processing data and formatting tables...")
+
             response = await self.client.chat.completions.create(
-                model="gpt-5-nano",
+                model="gpt-4o-mini",
                 messages=[
                     {"role": "system", "content": "You are a data analyst. Create structured data tables in markdown format. Use proper headers and organize data clearly."},
                     {"role": "user", "content": f"Data task: {task.description}\n\nContext: {context}\n\nCreate a well-organized data table or structured output."}
                 ],
-                max_completion_tokens=1000
+                max_tokens=1000
             )
             
             content = response.choices[0].message.content
