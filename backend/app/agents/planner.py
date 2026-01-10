@@ -71,7 +71,11 @@ class PlannerAgent:
     """
     
     def __init__(self):
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.client = AsyncOpenAI(
+            api_key=settings.FIREWORK_API,
+            base_url=settings.FIREWORKS_BASE_URL
+        ) if settings.FIREWORK_API else None
+        self.model = settings.FIREWORKS_MODEL
     
     async def decompose_goal(self, job_id: str, goal: str) -> List[Task]:
         """
@@ -98,12 +102,11 @@ class PlannerAgent:
         """Use OpenAI to decompose the goal"""
         try:
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": PLANNER_SYSTEM_PROMPT},
-                    {"role": "user", "content": f"Decompose this goal into tasks:\n\n{goal}"}
-                ],
-                response_format={"type": "json_object"}
+                    {"role": "user", "content": f"Decompose this goal into tasks:\n\n{goal}\n\nRespond with valid JSON only."}
+                ]
             )
             
             result = json.loads(response.choices[0].message.content)

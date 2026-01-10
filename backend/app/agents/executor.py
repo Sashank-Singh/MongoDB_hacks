@@ -18,7 +18,11 @@ class ResearcherAgent(BaseAgent):
     def __init__(self, agent_id: str, name: str = "Researcher"):
         super().__init__(agent_id, name, AgentRole.RESEARCHER.value)
         self.skills = ["research", "data_gathering", "web_search", "analysis"]
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.client = AsyncOpenAI(
+            api_key=settings.FIREWORK_API,
+            base_url=settings.FIREWORKS_BASE_URL
+        ) if settings.FIREWORK_API else None
+        self.model = settings.FIREWORKS_MODEL
     
     async def execute(self, task: Task) -> TaskResult:
         """Execute a research task with AI"""
@@ -37,7 +41,7 @@ class ResearcherAgent(BaseAgent):
             await self.log_event(EventType.AGENT_THINKING, task, "Scanning knowledge base and external sources...")
 
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert researcher. Provide detailed, factual research findings. Be thorough but concise. Use bullet points for key findings."},
                     {"role": "user", "content": f"Research task: {task.description}\n\nPrevious context: {context}\n\nProvide comprehensive research findings."}
@@ -52,7 +56,7 @@ class ResearcherAgent(BaseAgent):
                 outputs={
                     "content": content,
                     "type": "research",
-                    "model": "gpt-5-nano",
+                    "model": self.model,
                     "timestamp": datetime.utcnow().isoformat()
                 },
                 checkpoint=f"Research completed: {content[:200]}..."
@@ -68,7 +72,11 @@ class WriterAgent(BaseAgent):
     def __init__(self, agent_id: str, name: str = "Writer"):
         super().__init__(agent_id, name, AgentRole.WRITER.value)
         self.skills = ["writing", "editing", "summarization", "report_creation"]
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.client = AsyncOpenAI(
+            api_key=settings.FIREWORK_API,
+            base_url=settings.FIREWORKS_BASE_URL
+        ) if settings.FIREWORK_API else None
+        self.model = settings.FIREWORKS_MODEL
     
     async def execute(self, task: Task) -> TaskResult:
         """Execute a writing task with AI"""
@@ -85,7 +93,7 @@ class WriterAgent(BaseAgent):
             await self.log_event(EventType.AGENT_THINKING, task, "Drafting content structure and writing...")
 
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert content writer. Create well-structured, professional content. Use clear headings, bullet points, and organize information logically."},
                     {"role": "user", "content": f"Writing task: {task.description}\n\nSource material/context: {context}\n\nCreate professional, well-formatted content."}
@@ -116,7 +124,11 @@ class CoderAgent(BaseAgent):
     def __init__(self, agent_id: str, name: str = "Coder"):
         super().__init__(agent_id, name, AgentRole.CODER.value)
         self.skills = ["coding", "debugging", "code_review", "implementation"]
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.client = AsyncOpenAI(
+            api_key=settings.FIREWORK_API,
+            base_url=settings.FIREWORKS_BASE_URL
+        ) if settings.FIREWORK_API else None
+        self.model = settings.FIREWORKS_MODEL
     
     async def execute(self, task: Task) -> TaskResult:
         """Execute a coding task with AI"""
@@ -133,7 +145,7 @@ class CoderAgent(BaseAgent):
             await self.log_event(EventType.AGENT_THINKING, task, "Analyzing requirements and generating code...")
 
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": "You are an expert programmer. Write clean, well-documented code. Include comments explaining the logic."},
                     {"role": "user", "content": f"Coding task: {task.description}\n\nContext: {context}\n\nWrite the implementation."}
@@ -164,7 +176,11 @@ class DataBuilderAgent(BaseAgent):
     def __init__(self, agent_id: str, name: str = "DataBuilder"):
         super().__init__(agent_id, name, AgentRole.DATA_BUILDER.value)
         self.skills = ["data_processing", "table_creation", "csv", "spreadsheet"]
-        self.client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY) if settings.OPENAI_API_KEY else None
+        self.client = AsyncOpenAI(
+            api_key=settings.FIREWORK_API,
+            base_url=settings.FIREWORKS_BASE_URL
+        ) if settings.FIREWORK_API else None
+        self.model = settings.FIREWORKS_MODEL
     
     async def execute(self, task: Task) -> TaskResult:
         """Execute a data building task with AI"""
@@ -181,7 +197,7 @@ class DataBuilderAgent(BaseAgent):
             await self.log_event(EventType.AGENT_THINKING, task, "Processing data and formatting tables...")
 
             response = await self.client.chat.completions.create(
-                model="gpt-4o-mini",
+                model=self.model,
                 messages=[
                     {"role": "system", "content": "You are a data analyst. Create structured data tables in markdown format. Use proper headers and organize data clearly."},
                     {"role": "user", "content": f"Data task: {task.description}\n\nContext: {context}\n\nCreate a well-organized data table or structured output."}

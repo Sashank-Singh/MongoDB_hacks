@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
+import ReactMarkdown from 'react-markdown';
 
 // Types
 interface Agent {
@@ -46,7 +47,7 @@ interface Event {
     timestamp: string;
 }
 
-// Icons as simple SVG
+// Memoized Icons
 const Icons = {
     send: (
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -80,24 +81,160 @@ const Icons = {
             <path d="M23 4v6h-6M1 20v-6h6M20.49 9A9 9 0 0 0 5.64 5.64L1 10M23 14l-4.64 4.36A9 9 0 0 1 3.51 15" />
         </svg>
     ),
-    check: '✓',
-    pending: '○',
-    running: '◐',
-    failed: '✕',
 };
 
-// Agent role colors
-const getAgentInitial = (role: string) => {
-    const initials: Record<string, string> = {
-        planner: 'P',
-        researcher: 'R',
-        writer: 'W',
-        coder: 'C',
-        sentinel: 'S',
-        data_builder: 'D',
-    };
-    return initials[role] || role[0]?.toUpperCase() || '?';
+// Agent initials map
+const AGENT_INITIALS: Record<string, string> = {
+    planner: 'P',
+    researcher: 'R',
+    writer: 'W',
+    coder: 'C',
+    sentinel: 'S',
+    data_builder: 'D',
 };
+
+const getAgentInitial = (role: string) => AGENT_INITIALS[role] || role[0]?.toUpperCase() || '?';
+
+// Memoized Status Icon Component
+const StatusIcon = memo(({ status }: { status: string }) => {
+    switch (status) {
+        case 'completed': return <span style={{ color: 'var(--accent-success)' }}>✓</span>;
+        case 'running': return <span style={{ color: 'var(--accent-warning)' }}>◐</span>;
+        case 'failed': return <span style={{ color: 'var(--accent-error)' }}>✕</span>;
+        default: return <span style={{ color: 'var(--text-tertiary)' }}>○</span>;
+    }
+});
+StatusIcon.displayName = 'StatusIcon';
+
+// Memoized Agent Card Component
+const AgentCard = memo(({ agent }: { agent: Agent }) => (
+    <div className="agent-card">
+        <div className={`agent-avatar ${agent.role}`}>
+            {getAgentInitial(agent.role)}
+        </div>
+        <div className="agent-info">
+            <div className="agent-name">{agent.name}</div>
+            <div className="agent-status">
+                <span className={`status-dot ${agent.status}`} />
+                {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
+            </div>
+        </div>
+    </div>
+));
+AgentCard.displayName = 'AgentCard';
+
+// Memoized Task Node Component
+const TaskNode = memo(({ task, showConnector }: { task: Task; showConnector: boolean }) => (
+    <div>
+        {showConnector && <div className="dag-connector" />}
+        <div className="dag-node">
+            <div className={`dag-node-icon ${task.status}`}>
+                <StatusIcon status={task.status} />
+            </div>
+            <span style={{ flex: 1 }}>{task.name.replace(/_/g, ' ')}</span>
+            <span className={`task-badge ${task.status}`}>{task.status}</span>
+        </div>
+    </div>
+));
+TaskNode.displayName = 'TaskNode';
+
+// Memoized Message Component
+const MessageItem = memo(({ message, tasks, currentJobStatus }: { 
+    message: Message; 
+    tasks: Task[];
+    currentJobStatus?: string;
+}) => {
+    const avatarStyle = useMemo(() => {
+        if (message.agentRole) return {};
+        if (message.type === 'user') return { background: 'linear-gradient(135deg, #0ea5e9, #0284c7)' };
+        return { background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' };
+    }, [message.agentRole, message.type]);
+
+    const timeString = useMemo(() => 
+        message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        [message.timestamp]
+    );
+
+    return (
+        <div className={`message ${message.type}`}>
+            <div
+                className={`message-avatar ${message.type} ${message.agentRole || ''}`}
+                style={avatarStyle}
+            >
+                {message.type === 'user' ? 'U' : message.agentRole ? getAgentInitial(message.agentRole) : 'OS'}
+            </div>
+            <div className="message-content">
+                <div className="message-header">
+                    <span className="message-sender">{message.sender}</span>
+                    <span className="message-time">{timeString}</span>
+                </div>
+                <div className="message-text markdown-content">
+                    <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
+
+                {message.tasks && message.tasks.length > 0 && (
+                    <div className="task-card">
+                        <div className="task-card-header">
+                            <span className="task-card-title">Task Execution Plan</span>
+                            <span className={`task-badge ${currentJobStatus || 'pending'}`}>
+                                {currentJobStatus || 'pending'}
+                            </span>
+                        </div>
+                        <div className="task-dag">
+                            {message.tasks.map((task, index) => {
+                                const currentTask = tasks.find((t) => t.id === task.id);
+                                const status = currentTask?.status || task.status;
+                                return (
+                                    <div key={task.id}>
+                                        {index > 0 && <div className="dag-connector" />}
+                                        <div className="dag-node">
+                                            <div className={`dag-node-icon ${status}`}>
+                                                <StatusIcon status={status} />
+                                            </div>
+                                            <span>{task.name.replace(/_/g, ' ')}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+});
+MessageItem.displayName = 'MessageItem';
+
+// Memoized Event Item Component
+const EventItem = memo(({ event }: { event: Event }) => {
+    const iconType = useMemo(() => {
+        if (event.type.includes('FAILED')) return 'error';
+        if (event.type.includes('COMPLETED')) return 'success';
+        return 'info';
+    }, [event.type]);
+
+    const iconChar = useMemo(() => {
+        if (event.type.includes('FAILED')) return '!';
+        if (event.type.includes('COMPLETED')) return '✓';
+        return 'i';
+    }, [event.type]);
+
+    const timeString = useMemo(() => 
+        new Date(event.timestamp).toLocaleTimeString(),
+        [event.timestamp]
+    );
+
+    return (
+        <div className="event-item">
+            <div className={`event-icon ${iconType}`}>{iconChar}</div>
+            <div className="event-content">
+                <div className="event-title">{event.message}</div>
+                <div className="event-time">{timeString}</div>
+            </div>
+        </div>
+    );
+});
+EventItem.displayName = 'EventItem';
 
 export default function Home() {
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
@@ -108,39 +245,39 @@ export default function Home() {
     const [currentJob, setCurrentJob] = useState<Job | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [events, setEvents] = useState<Event[]>([]);
-    const [stream, setStream] = useState<Array<{
-        id: string;
-        agent: string;
-        role: string;
-        message: string;
-        timestamp: Date;
-        type: string;
-    }>>([]);
     const [jobDoneProcessed, setJobDoneProcessed] = useState(false);
+    
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const agentsRef = useRef<Agent[]>([]);
+    
+    // Keep agents ref updated for use in polling
+    useEffect(() => {
+        agentsRef.current = agents;
+    }, [agents]);
 
-    // Theme toggle
+    // Theme toggle - optimized
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
     }, [theme]);
 
-    // Auto-scroll messages
+    // Auto-scroll - debounced
     useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages]);
+        const timer = setTimeout(() => {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }, 50);
+        return () => clearTimeout(timer);
+    }, [messages.length]);
 
-    // Initial welcome message
+    // Initial setup
     useEffect(() => {
-        setMessages([
-            {
-                id: '1',
-                type: 'system',
-                sender: 'Agent OS',
-                content: 'Welcome to Agent OS! I coordinate multiple AI agents to accomplish complex tasks. Enter your goal below and I\'ll break it down into tasks, assign them to specialized agents, and execute them with full observability.',
-                timestamp: new Date(),
-            },
-        ]);
+        setMessages([{
+            id: '1',
+            type: 'system',
+            sender: 'Agent OS',
+            content: 'Welcome to Agent OS! I coordinate multiple AI agents to accomplish complex tasks. Enter your goal below and I\'ll break it down into tasks, assign them to specialized agents, and execute them with full observability.',
+            timestamp: new Date(),
+        }]);
 
         // Initial agent fetch
         fetch('/api/agents')
@@ -149,118 +286,103 @@ export default function Home() {
             .catch(err => console.error('Failed to load agents:', err));
     }, []);
 
-    // Polling for updates when job is running
+    // Optimized polling - batched requests with longer interval
     useEffect(() => {
-        if (!currentJob || currentJob.status !== 'running') return;
+        // Keep polling while job exists and is running OR just completed (to show results)
+        if (!currentJob || (currentJob.status !== 'running' && currentJob.status !== 'done')) return;
+        
+        // If already processed completion, stop polling
+        if (currentJob.status === 'done' && jobDoneProcessed) return;
 
-        const interval = setInterval(async () => {
+        const controller = new AbortController();
+        
+        const poll = async () => {
             try {
-                // Fetch job status
-                const jobRes = await fetch(`/api/jobs/${currentJob.id}`);
-                let data: any = null;
-                if (jobRes.ok) {
-                    data = await jobRes.json();
-                    setCurrentJob(data.job);
-                    setTasks(data.tasks || []);
-                }
+                // Parallel fetch for better performance
+                const [jobRes, eventsRes, agentsRes] = await Promise.all([
+                    fetch(`/api/jobs/${currentJob.id}`, { signal: controller.signal }),
+                    fetch(`/api/jobs/${currentJob.id}/events?limit=10`, { signal: controller.signal }),
+                    fetch('/api/agents', { signal: controller.signal })
+                ]);
 
-                // Fetch events
-                const eventsRes = await fetch(`/api/jobs/${currentJob.id}/events?limit=20`);
+                if (!jobRes.ok) return;
+                
+                const data = await jobRes.json();
+                
+                // Batch state updates
+                setTasks(data.tasks || []);
+
                 if (eventsRes.ok) {
                     const eventsData = await eventsRes.json();
                     setEvents(eventsData);
-
-                    // Add agent events to stream
-                    eventsData.forEach((event: any) => {
-                        // Only add if it has an agent_id and isn't already in stream (by ID)
-                        if (event.agent_id) {
-                            setStream(prev => {
-                                if (prev.find(s => s.id === event.id)) return prev;
-
-                                const agent = agents.find(a => a.id === event.agent_id);
-                                if (!agent) return prev;
-
-                                return [...prev, {
-                                    id: event.id,
-                                    agent: agent.name,
-                                    role: agent.role,
-                                    message: event.message,
-                                    timestamp: new Date(event.timestamp),
-                                    type: event.type.includes('failed') ? 'warning' : 'info'
-                                }].sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-                            });
-                        }
-                    });
                 }
 
-                // Fetch agents real-time status
-                const agentsRes = await fetch('/api/agents');
                 if (agentsRes.ok) {
                     const agentsData = await agentsRes.json();
                     setAgents(agentsData);
                 }
 
-                if (data) {
-                    // Check for job completion
-                    if (data.job.status === 'done' && !jobDoneProcessed) {
-                        setJobDoneProcessed(true);
-
-                        // Allow time for last polling update to catch all tasks
-                        setTimeout(() => {
-                            const completedTasks = data.tasks || [];
-                            const finalOutput = completedTasks
-                                .filter((t: Task) => t.outputs && (t.outputs.content || t.outputs.code || t.outputs.data))
-                                .map((t: Task) => {
-                                    const out = t.outputs;
-                                    if (!out) return '';
-                                    if (out.content) return `### ${t.name}\n${out.content}`;
-                                    if (out.code) return `### ${t.name}\n\`\`\`${out.language || ''}\n${out.code}\n\`\`\``;
-                                    if (out.data) return `### ${t.name}\n${JSON.stringify(out.data, null, 2)}`;
-                                    return '';
-                                })
-                                .join('\n\n');
-
-                            const completionMessage: Message = {
-                                id: Date.now().toString(),
-                                type: 'agent',
-                                sender: 'Agent OS',
-                                agentRole: 'sentinel',
-                                content: `## 🏁 Job Complete!\n\nHere are the results:\n\n${finalOutput || 'Tasks completed successfully.'}`,
-                                timestamp: new Date(),
-                            };
-                            setMessages(prev => [...prev, completionMessage]);
-                            setCurrentJob(prev => prev ? { ...prev, status: 'done' } : null);
-                        }, 1000);
-                    }
-
-                    // Update stream from checkpoints
-                    if (data.tasks) {
-                        data.tasks.forEach((task: Task) => {
-                            if (task.checkpoint && !stream.find(s => s.message === task.checkpoint)) {
-                                const agent = agents.find(a => a.id === task.assigned_agent);
-                                if (agent) {
-                                    setStream(prev => [...prev, {
-                                        id: Date.now() + Math.random().toString(),
-                                        agent: agent.name,
-                                        role: agent.role,
-                                        message: task.checkpoint!,
-                                        timestamp: new Date(),
-                                        type: 'success'
-                                    }]);
-                                }
+                // Handle job completion - show final output
+                if (data.job.status === 'done' && !jobDoneProcessed) {
+                    setJobDoneProcessed(true);
+                    
+                    const completedTasks = data.tasks || [];
+                    
+                    // Build final output from all completed tasks
+                    const outputs: string[] = [];
+                    completedTasks.forEach((t: Task) => {
+                        if (t.outputs) {
+                            if (t.outputs.content) {
+                                outputs.push(`### 📋 ${t.name.replace(/_/g, ' ')}\n\n${t.outputs.content}`);
+                            } else if (t.outputs.code) {
+                                outputs.push(`### 💻 ${t.name.replace(/_/g, ' ')}\n\n\`\`\`${t.outputs.language || ''}\n${t.outputs.code}\n\`\`\``);
+                            } else if (t.outputs.data) {
+                                outputs.push(`### 📊 ${t.name.replace(/_/g, ' ')}\n\n${JSON.stringify(t.outputs.data, null, 2)}`);
                             }
-                        });
-                    }
+                        }
+                    });
+
+                    const finalOutput = outputs.length > 0 
+                        ? outputs.join('\n\n---\n\n')
+                        : 'All tasks completed successfully!';
+
+                    // Add completion message with results
+                    setMessages(prev => [...prev, {
+                        id: Date.now().toString(),
+                        type: 'agent',
+                        sender: 'Agent OS',
+                        agentRole: 'sentinel',
+                        content: `## 🏁 Job Complete!\n\n${finalOutput}`,
+                        timestamp: new Date(),
+                    }]);
+                    
+                    // Update job status last
+                    setCurrentJob(data.job);
+                } else {
+                    // Update job status for running jobs
+                    setCurrentJob(data.job);
                 }
             } catch (error) {
-                console.log('Polling error:', error);
+                if ((error as Error).name !== 'AbortError') {
+                    console.log('Polling error:', error);
+                }
             }
-        }, 1000);
+        };
 
-        return () => clearInterval(interval);
-    }, [currentJob]);
+        // Initial poll
+        poll();
+        
+        // Poll every 1.5 seconds
+        const interval = setInterval(poll, 1500);
 
-    const handleSubmit = async () => {
+        return () => {
+            controller.abort();
+            clearInterval(interval);
+        };
+    }, [currentJob?.id, currentJob?.status, jobDoneProcessed]);
+
+    // Memoized submit handler
+    const handleSubmit = useCallback(async () => {
         if (!input.trim() || isLoading) return;
 
         const userMessage: Message = {
@@ -271,14 +393,24 @@ export default function Home() {
             timestamp: new Date(),
         };
 
-        setMessages((prev) => [...prev, userMessage]);
+        setMessages(prev => [...prev, userMessage]);
         setInput('');
         setIsLoading(true);
         setJobDoneProcessed(false);
-        setStream([]);
+        setTasks([]);
+        setEvents([]);
 
         try {
-            // Create job via API
+            // Reset system before starting new job (clears old tasks, resets agents)
+            await fetch('/api/system/reset', { method: 'POST' });
+            
+            // Refresh agents after reset
+            const agentsRes = await fetch('/api/agents/');
+            if (agentsRes.ok) {
+                const agentsData = await agentsRes.json();
+                setAgents(agentsData);
+            }
+
             const response = await fetch('/api/jobs/', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -290,8 +422,7 @@ export default function Home() {
                 setCurrentJob(data.job);
                 setTasks(data.tasks || []);
 
-                // Add system response with task DAG
-                const plannerMessage: Message = {
+                setMessages(prev => [...prev, {
                     id: (Date.now() + 1).toString(),
                     type: 'agent',
                     sender: 'Planner',
@@ -299,39 +430,24 @@ export default function Home() {
                     content: `I've analyzed your goal and created a task plan with ${data.tasks?.length || 0} steps. Here's the execution plan:`,
                     timestamp: new Date(),
                     tasks: data.tasks,
-                };
-
-                setMessages((prev) => [...prev, plannerMessage]);
-
-                // Update agent status
-                setAgents((prev) =>
-                    prev.map((a) =>
-                        a.role === 'planner' ? { ...a, status: 'busy' as const } : a
-                    )
-                );
+                }]);
 
                 // Start the job
                 await fetch(`/api/jobs/${data.job.id}/start`, { method: 'POST' });
-                setCurrentJob((prev) => prev ? { ...prev, status: 'running' } : null);
+                setCurrentJob(prev => prev ? { ...prev, status: 'running' } : null);
 
-                // Add execution message
-                setTimeout(() => {
-                    setMessages((prev) => [
-                        ...prev,
-                        {
-                            id: (Date.now() + 2).toString(),
-                            type: 'system',
-                            sender: 'Agent OS',
-                            content: 'Job started! Agents are now executing tasks. Watch the progress in the panel on the right.',
-                            timestamp: new Date(),
-                        },
-                    ]);
-                }, 500);
+                setMessages(prev => [...prev, {
+                    id: (Date.now() + 2).toString(),
+                    type: 'system',
+                    sender: 'Agent OS',
+                    content: 'Job started! Agents are now executing tasks. Watch the progress in the panel on the right.',
+                    timestamp: new Date(),
+                }]);
             } else {
                 throw new Error('Failed to create job');
             }
         } catch (error) {
-            // Fallback for demo when backend is offline
+            // Demo fallback
             const mockTasks: Task[] = [
                 { id: '1', name: 'research_topic', description: 'Research and gather information', status: 'completed', depends_on: [], assigned_agent: '2' },
                 { id: '2', name: 'analyze_findings', description: 'Analyze the research findings', status: 'running', depends_on: ['1'], assigned_agent: '2' },
@@ -347,7 +463,7 @@ export default function Home() {
                 created_at: new Date().toISOString(),
             });
 
-            const plannerMessage: Message = {
+            setMessages(prev => [...prev, {
                 id: (Date.now() + 1).toString(),
                 type: 'agent',
                 sender: 'Planner',
@@ -355,103 +471,45 @@ export default function Home() {
                 content: `I've analyzed your goal and created a task plan with 4 steps:`,
                 timestamp: new Date(),
                 tasks: mockTasks,
-            };
-
-            setMessages((prev) => [...prev, plannerMessage]);
-
-            // Simulate agents working
-            setAgents((prev) =>
-                prev.map((a) =>
-                    a.role === 'researcher' ? { ...a, status: 'busy' as const } : a
-                )
-            );
-
-            // Simulate progress
-            simulateProgress(mockTasks);
+            }]);
         }
 
         setIsLoading(false);
-    };
+    }, [input, isLoading]);
 
-    // Demo simulation
-    const simulateProgress = (initialTasks: Task[]) => {
-        let taskIndex = 1; // Start from second task
-
-        const progressInterval = setInterval(() => {
-            if (taskIndex >= initialTasks.length) {
-                clearInterval(progressInterval);
-
-                setMessages((prev) => [
-                    ...prev,
-                    {
-                        id: Date.now().toString(),
-                        type: 'agent',
-                        sender: 'Writer Agent',
-                        agentRole: 'writer',
-                        content: 'All tasks completed successfully! Your goal has been achieved.',
-                        timestamp: new Date(),
-                    },
-                ]);
-
-                setCurrentJob((prev) => prev ? { ...prev, status: 'done' } : null);
-                setAgents((prev) => prev.map((a) => ({ ...a, status: 'idle' as const })));
-                return;
-            }
-
-            // Complete current task
-            setTasks((prev) =>
-                prev.map((t, i) => {
-                    if (i === taskIndex) return { ...t, status: 'running' as const };
-                    if (i === taskIndex - 1) return { ...t, status: 'completed' as const };
-                    return t;
-                })
-            );
-
-            // Add progress message
-            const task = initialTasks[taskIndex];
-            setMessages((prev) => [
-                ...prev,
-                {
-                    id: Date.now().toString(),
-                    type: 'agent',
-                    sender: taskIndex === 1 ? 'Research Agent' : taskIndex === 2 ? 'Writer Agent' : 'Writer Agent',
-                    agentRole: taskIndex === 1 ? 'researcher' : 'writer',
-                    content: `Working on: ${task.description}`,
-                    timestamp: new Date(),
-                },
-            ]);
-
-            taskIndex++;
-        }, 3000);
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Keyboard handler
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             handleSubmit();
         }
-    };
+    }, [handleSubmit]);
 
-    const handlePauseResume = async () => {
+    // Pause/Resume handler
+    const handlePauseResume = useCallback(async () => {
         if (!currentJob) return;
 
         if (currentJob.status === 'running') {
             await fetch(`/api/jobs/${currentJob.id}/pause`, { method: 'POST' });
-            setCurrentJob((prev) => prev ? { ...prev, status: 'paused' } : null);
+            setCurrentJob(prev => prev ? { ...prev, status: 'paused' } : null);
         } else if (currentJob.status === 'paused') {
             await fetch(`/api/jobs/${currentJob.id}/resume`, { method: 'POST' });
-            setCurrentJob((prev) => prev ? { ...prev, status: 'running' } : null);
+            setCurrentJob(prev => prev ? { ...prev, status: 'running' } : null);
         }
-    };
+    }, [currentJob]);
 
-    const getStatusIcon = (status: string) => {
-        switch (status) {
-            case 'completed': return <span style={{ color: 'var(--accent-success)' }}>✓</span>;
-            case 'running': return <span style={{ color: 'var(--accent-warning)' }}>◐</span>;
-            case 'failed': return <span style={{ color: 'var(--accent-error)' }}>✕</span>;
-            default: return <span style={{ color: 'var(--text-tertiary)' }}>○</span>;
-        }
-    };
+    // Theme toggle handler
+    const toggleTheme = useCallback(() => {
+        setTheme(t => t === 'dark' ? 'light' : 'dark');
+    }, []);
+
+    // Memoized values
+    const headerTitle = useMemo(() => 
+        currentJob ? `Job: ${currentJob.goal.slice(0, 50)}...` : 'Multi-Agent Workflow',
+        [currentJob?.goal]
+    );
+
+    const displayedEvents = useMemo(() => events.slice(0, 5), [events]);
 
     return (
         <div className="app-container">
@@ -466,19 +524,8 @@ export default function Home() {
 
                 <div className="agents-section">
                     <div className="section-title">Active Agents ({agents.length})</div>
-                    {agents.map((agent) => (
-                        <div key={agent.id} className="agent-card">
-                            <div className={`agent-avatar ${agent.role}`}>
-                                {getAgentInitial(agent.role)}
-                            </div>
-                            <div className="agent-info">
-                                <div className="agent-name">{agent.name}</div>
-                                <div className="agent-status">
-                                    <span className={`status-dot ${agent.status}`} />
-                                    {agent.status.charAt(0).toUpperCase() + agent.status.slice(1)}
-                                </div>
-                            </div>
-                        </div>
+                    {agents.map(agent => (
+                        <AgentCard key={agent.id} agent={agent} />
                     ))}
                 </div>
             </aside>
@@ -486,13 +533,11 @@ export default function Home() {
             {/* Main Chat Area */}
             <main className="main-content">
                 <header className="header">
-                    <h1 className="header-title">
-                        {currentJob ? `Job: ${currentJob.goal.slice(0, 50)}...` : 'Multi-Agent Workflow'}
-                    </h1>
+                    <h1 className="header-title">{headerTitle}</h1>
                     <div className="header-actions">
                         <button
                             className="theme-toggle"
-                            onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                            onClick={toggleTheme}
                             title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}
                         >
                             {theme === 'dark' ? Icons.sun : Icons.moon}
@@ -512,63 +557,13 @@ export default function Home() {
                                 </p>
                             </div>
                         ) : (
-                            messages.map((message) => (
-                                <div key={message.id} className={`message ${message.type}`}>
-                                    <div
-                                        className={`message-avatar ${message.type} ${message.agentRole || ''}`}
-                                        style={
-                                            message.agentRole
-                                                ? {}
-                                                : message.type === 'user'
-                                                    ? { background: 'linear-gradient(135deg, #0ea5e9, #0284c7)' }
-                                                    : { background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }
-                                        }
-                                    >
-                                        {message.type === 'user'
-                                            ? 'U'
-                                            : message.agentRole
-                                                ? getAgentInitial(message.agentRole)
-                                                : 'OS'}
-                                    </div>
-                                    <div className="message-content">
-                                        <div className="message-header">
-                                            <span className="message-sender">{message.sender}</span>
-                                            <span className="message-time">
-                                                {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
-                                        </div>
-                                        <div className="message-text">{message.content}</div>
-
-                                        {/* Task DAG visualization */}
-                                        {message.tasks && message.tasks.length > 0 && (
-                                            <div className="task-card">
-                                                <div className="task-card-header">
-                                                    <span className="task-card-title">Task Execution Plan</span>
-                                                    <span className={`task-badge ${currentJob?.status || 'pending'}`}>
-                                                        {currentJob?.status || 'pending'}
-                                                    </span>
-                                                </div>
-                                                <div className="task-dag">
-                                                    {message.tasks.map((task, index) => {
-                                                        const currentTask = tasks.find((t) => t.id === task.id);
-                                                        const status = currentTask?.status || task.status;
-                                                        return (
-                                                            <div key={task.id}>
-                                                                {index > 0 && <div className="dag-connector" />}
-                                                                <div className="dag-node">
-                                                                    <div className={`dag-node-icon ${status}`}>
-                                                                        {getStatusIcon(status)}
-                                                                    </div>
-                                                                    <span>{task.name.replace(/_/g, ' ')}</span>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
+                            messages.map(message => (
+                                <MessageItem 
+                                    key={message.id} 
+                                    message={message} 
+                                    tasks={tasks}
+                                    currentJobStatus={currentJob?.status}
+                                />
                             ))
                         )}
 
@@ -617,9 +612,7 @@ export default function Home() {
                 <div className="panel-header">
                     <h2 className="panel-title">Job Details</h2>
                     <p className="panel-subtitle">
-                        {currentJob
-                            ? `Status: ${currentJob.status}`
-                            : 'No active job'}
+                        {currentJob ? `Status: ${currentJob.status}` : 'No active job'}
                     </p>
                 </div>
 
@@ -645,16 +638,7 @@ export default function Home() {
                     {tasks.length > 0 ? (
                         <div className="task-dag" style={{ marginBottom: '24px' }}>
                             {tasks.map((task, index) => (
-                                <div key={task.id}>
-                                    {index > 0 && <div className="dag-connector" />}
-                                    <div className="dag-node">
-                                        <div className={`dag-node-icon ${task.status}`}>
-                                            {getStatusIcon(task.status)}
-                                        </div>
-                                        <span style={{ flex: 1 }}>{task.name.replace(/_/g, ' ')}</span>
-                                        <span className={`task-badge ${task.status}`}>{task.status}</span>
-                                    </div>
-                                </div>
+                                <TaskNode key={task.id} task={task} showConnector={index > 0} />
                             ))}
                         </div>
                     ) : (
@@ -665,19 +649,9 @@ export default function Home() {
 
                     <div className="section-title">Recent Events</div>
                     <div className="event-timeline">
-                        {events.length > 0 ? (
-                            events.slice(0, 5).map((event) => (
-                                <div key={event.id} className="event-item">
-                                    <div className={`event-icon ${event.type.includes('FAILED') ? 'error' : event.type.includes('COMPLETED') ? 'success' : 'info'}`}>
-                                        {event.type.includes('FAILED') ? '!' : event.type.includes('COMPLETED') ? '✓' : 'i'}
-                                    </div>
-                                    <div className="event-content">
-                                        <div className="event-title">{event.message}</div>
-                                        <div className="event-time">
-                                            {new Date(event.timestamp).toLocaleTimeString()}
-                                        </div>
-                                    </div>
-                                </div>
+                        {displayedEvents.length > 0 ? (
+                            displayedEvents.map(event => (
+                                <EventItem key={event.id} event={event} />
                             ))
                         ) : (
                             <div className="event-item">
