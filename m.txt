@@ -1,0 +1,115 @@
+TEAM TASK ALLOCATION — AGENT OS (3 PEOPLE)
+
+I AM person 1 so we will only work one person 1 tasks 
+
+
+PERSON 1: AGENT ORCHESTRATION & INTELLIGENCE
+(Role: Agent Systems Engineer)
+
+Owns the “OS brain”
+
+Responsibilities:
+
+* Planner agent: convert user goal into a task DAG
+* Define task dependencies (depends_on)
+* Scheduler / Router:
+
+  * Assign tasks based on agent skills and load
+* Recovery logic:
+
+  * Retry same agent
+  * Reassign to different agent
+  * Escalate or stop job safely
+* Enforce deterministic task state machine:
+  pending → running → completed | failed
+* Context compression:
+
+  * Store checkpoint summaries per task for downstream use
+
+Deliverables:
+
+* Task DAG generator
+* Scheduler loop for runnable tasks
+* Recovery decision rules
+* Clear agent role definitions
+
+---
+
+PERSON 2: BACKEND, PERSISTENCE & RELIABILITY
+(Role: Platform / Infrastructure Engineer)
+
+Owns durability and recovery
+
+Responsibilities:
+
+* MongoDB Atlas data model:
+  jobs, tasks, agents, events, artifacts
+* Atomic task claiming using findOneAndUpdate
+* Worker execution framework:
+
+  * Researcher, Writer, Coder, etc.
+* Sentinel:
+
+  * Agent heartbeats
+  * Timeout detection
+  * Error and anomaly logging
+* Crash & recovery:
+
+  * Resume execution from MongoDB state
+  * Restart-safe backend
+
+Deliverables:
+
+* Backend API (FastAPI or Express)
+* Worker processes (Celery / RQ / async)
+* Event logging system
+* Demonstrable crash-and-recover flow
+
+---
+
+PERSON 3: UI & DEMO EXPERIENCE
+(Role: Product / Frontend Engineer)
+
+Owns the “OS feel” and demo impact
+
+Responsibilities:
+
+* Job creation UI (goal input)
+* Task graph (DAG) visualization
+* Live execution view:
+
+  * Task status updates
+  * Streaming logs
+  * Artifact outputs
+* Mid-execution controls:
+
+  * Pause / resume job
+  * Retry failed task
+  * Reassign task to another agent
+* Simple replay / timeline view (optional)
+
+Deliverables:
+
+* React / Next.js dashboard
+* DAG visualization (boxes + arrows is sufficient)
+* Real-time updates (polling or websockets)
+* Polished 3-minute demo flow
+
+---
+
+SYSTEM FLOW (HIGH LEVEL)
+
+User → UI
+UI → Planner
+Planner → Tasks stored in MongoDB
+Scheduler assigns tasks
+Workers execute tasks
+Events logged to MongoDB
+UI updates live
+Failures → Sentinel → Recovery → Continue execution
+
+---
+
+ONE-LINE PITCH
+
+Agent OS is a MongoDB-backed control plane for durable, long-running, multi-agent workflows with live execution, recovery, and human-in-the-loop control.

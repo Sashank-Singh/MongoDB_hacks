@@ -1,0 +1,175 @@
+Agent OS (practical definition)
+
+Agent OS is a control plane for AI agents, similar to how Kubernetes is a control plane for containers.
+
+Instead of a single chat-based agent, it provides:
+- Job scheduling
+- Persistent state storage
+- Event logging
+- Multiple agent workers
+- Observability and replay
+- Failure recovery and retries
+- Human-in-the-loop controls
+
+All state is backed by MongoDB Atlas.
+
+The “OS” aspect is the ability to manage many long-running, multi-agent tasks with persistence and recovery.
+
+
+Core product: user experience
+
+The UI behaves like a lightweight operating system.
+
+1. Create a job
+The user submits a goal, for example:
+“Create a competitor analysis, pricing table, and GTM brief.”
+
+The system displays:
+- A task graph (DAG)
+- Status per step (queued / running / failed / completed)
+- The agent assigned to each step
+
+2. Live execution view
+- Steps update as they complete
+- Logs stream in real time
+- Outputs appear as artifacts (tables, documents, links)
+
+3. Mid-execution control
+The user can:
+- Pause or resume the job
+- Retry a failed task
+- Reassign a task to another agent
+- Edit the task graph
+- Roll back to a prior state (optional)
+
+4. Crash and recover
+The backend can be stopped and restarted.
+Execution resumes from MongoDB state.
+
+This demonstrates durable, long-running coordination.
+
+
+Multi-agent architecture
+
+The system runs multiple specialized agents as workers.
+
+Agent roles:
+
+Planner  
+- Converts the goal into a task DAG with dependencies
+
+Scheduler / Router  
+- Assigns tasks based on agent skills and load
+
+Executor agents  
+- Examples: Researcher, Writer, Coder, Data Builder
+
+Sentinel (reliability)  
+- Detects timeouts, errors, and anomalous behavior
+
+Recovery agent  
+- Decides how to handle failures (retry, reassign, modify, or escalate)
+
+This is sufficient to feel like an operating system rather than a chatbot.
+
+
+MongoDB Atlas as system memory
+
+MongoDB functions as RAM, filesystem, and process table.
+
+Collections:
+
+jobs
+- _id
+- goal
+- status (queued / running / paused / done)
+- created_at
+
+tasks
+- _id
+- job_id
+- name
+- depends_on
+- status (pending / running / failed / completed)
+- assigned_agent
+- attempts
+- inputs, outputs
+- checkpoint (summary + artifact references)
+
+agents
+- _id
+- name
+- skills
+- status (idle / busy / dead)
+- last_heartbeat
+- capabilities
+
+events
+- append-only log
+- job_id, task_id
+- type (TASK_STARTED, TOOL_ERROR, RETRY, etc.)
+- payload
+- timestamp
+
+artifacts
+- stored outputs (reports, tables, code, links)
+
+This data model makes the system credible as an OS.
+
+
+Key technical ideas
+
+Deterministic state machine
+Tasks follow strict transitions:
+pending -> running -> completed | failed
+Failures are routed to recovery logic.
+
+Recovery policies
+On failure, the system can:
+- Retry the same agent
+- Retry a different agent
+- Change tools or parameters
+- Ask the user for clarification
+- Skip with degraded output
+- Stop the job safely
+
+Context compression
+Each task stores:
+- Full logs (optional)
+- A short checkpoint summary for downstream tasks
+
+Replay
+Because all events are logged, the system can replay execution.
+Even a simple timeline view is effective.
+
+
+Hackathon-friendly implementation
+
+Minimal stack:
+- Backend: FastAPI or Node/Express
+- Workers: Celery, RQ, or async workers
+- UI: Next.js / React dashboard
+- Database: MongoDB Atlas
+
+Execution model:
+- Scheduler polls for runnable tasks
+- Runnable = pending and all dependencies completed
+- Task claim via atomic findOneAndUpdate
+- Worker executes and writes outputs and checkpoints
+- Sentinel monitors heartbeats and emits failure events
+
+This design is simple, resilient, and demo-ready.
+
+
+3-minute demo flow
+
+1. Introduce Agent OS as a durable workflow system
+2. Create a job (“GTM brief + pricing”)
+3. Show the generated task graph
+4. Let one or two tasks complete
+5. Force a failure (kill a worker or tool error)
+6. Sentinel detects it; Recovery reassigns the task
+7. Task completes successfully
+8. Restart the backend and show the job continuing
+
+This clearly demonstrates long-running coordination and recovery.
