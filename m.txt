@@ -1,6 +1,6 @@
 TEAM TASK ALLOCATION — AGENT OS (3 PEOPLE)
 
-I AM person 1 so we will only work one person 1 tasks 
+I AM PERSON 2 so we will only work on one PERSON 2 tasks
 
 
 PERSON 1: AGENT ORCHESTRATION & INTELLIGENCE
