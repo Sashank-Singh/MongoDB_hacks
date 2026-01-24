@@ -179,31 +179,38 @@ async def reset_system(db: Database = Depends(get_database)):
     Full system reset - clears all running tasks and resets agents.
     Call this before starting a new job to ensure clean state.
     """
-    global _worker_tasks
+    global _worker_tasks, _scheduler_task, _sentinel_task
     
-    # 1. Stop all workers
+    # 1. Stop scheduler and sentinel
+    scheduler.stop()
+    sentinel.stop()
+    
+    # 2. Stop all workers
     stopped_count = 0
     for item in _worker_tasks:
         if not item["task"].done():
             item["worker"].stop()
             stopped_count += 1
     
+    # Wait briefly for tasks to stop
+    await asyncio.sleep(0.2)
+    
     # Clear worker tasks list
     _worker_tasks = []
     
-    # 2. Cancel all running/pending tasks
+    # 3. Cancel all running/pending tasks
     tasks_result = await db.tasks.update_many(
         {"status": {"$in": ["running", "pending"]}},
         {"$set": {"status": "cancelled", "assigned_agent": None}}
     )
     
-    # 3. Mark all running jobs as cancelled
+    # 4. Mark all running jobs as cancelled
     jobs_result = await db.jobs.update_many(
         {"status": {"$in": ["running", "queued"]}},
         {"$set": {"status": "cancelled"}}
     )
     
-    # 4. Reset all agents to idle
+    # 5. Reset all agents to idle
     agents_result = await db.agents.update_many(
         {},
         {"$set": {
@@ -213,13 +220,18 @@ async def reset_system(db: Database = Depends(get_database)):
         }}
     )
     
-    # 5. Restart workers
+    # 6. Restart scheduler
+    loop = asyncio.get_event_loop()
+    _scheduler_task = loop.create_task(scheduler.run_loop())
+    
+    # 7. Restart sentinel
+    _sentinel_task = loop.create_task(sentinel.run_loop())
+    
+    # 8. Restart workers
     cursor = db.agents.find({})
     agents = await cursor.to_list(length=100)
     
     started_count = 0
-    loop = asyncio.get_event_loop()
-    
     for agent_doc in agents:
         agent_id = agent_doc["_id"]
         worker = Worker(name=agent_doc["name"], role=AgentRole(agent_doc["role"]))

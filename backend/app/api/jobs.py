@@ -25,9 +25,9 @@ async def create_job(job_input: JobCreate, db: Database = Depends(get_database))
     planner = PlannerAgent()
     tasks = await planner.decompose_goal(job.id, job_input.goal)
     
-    # Update job with task IDs
+    # Update job with task IDs and set to running immediately
     job.task_ids = [t.id for t in tasks]
-    job.status = JobStatus.QUEUED
+    job.status = JobStatus.RUNNING
     
     # Save to MongoDB
     await db.jobs.insert_one(job.to_mongo())
